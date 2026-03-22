@@ -1,7 +1,8 @@
-streamlit
-reportlab
+opencv-python-headless
 gspread
 oauth2client
-google-auth
+pyzbar
 Pillow
 requests
+reportlab
+streamlit
