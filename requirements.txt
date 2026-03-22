@@ -3,3 +3,5 @@ reportlab
 gspread
 oauth2client
 google-auth
+Pillow
+requests
