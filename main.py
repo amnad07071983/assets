@@ -12,38 +12,31 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
 
-# --- 1. ตั้งค่าหน้าจอแอป ---
-st.set_page_config(page_title="ระบบจัดการทรัพย์สิน", layout="wide")
-st.title("📦 ระบบจัดการทรัพย์สิน (Online Report)")
-
-# รายชื่อฟิลด์ทั้ง 17 ฟิลด์
-FIELDS = [
-    "ID-Auto", "รูปภาพ", "QR-CODE", "บริษัท", "สถานะทรัพย์สิน", 
-    "กลุ่มทรัพย์สิน", "รหัสทรัพย์สิน", "ชื่อทรัพย์สิน1", "แผนก", 
-    "วันที่รับเข้าทะเบียน", "วันที่ตัดจากทะเบียน", "หน่วยนับ", 
-    "จำนวน", "มูลค่าทุน", "ค่าเสื่อมสะสม", "มูลค่าคงเหลือ", "ข้อมูล ณ วันที่"
-]
-
-# --- 2. ฟังก์ชันจัดการ URL รูปภาพ (แกะสูตรและแปลงเป็น Direct Link) ---
+# --- 1. ฟังก์ชันดึง URL และแปลงเป็น Direct Link (เน้นใช้ Thumbnail API) ---
 def get_drive_direct_link(cell_value):
     if not cell_value:
         return None
+    
     # แกะ URL ออกจากสูตร =IMAGE("...") หรือข้อความธรรมดา
-    url_match = re.search(r'https?://[^\s"]+', cell_value)
+    url_match = re.search(r'https?://[^\s"]+', str(cell_value))
     if not url_match:
         return None
     url = url_match.group(0)
-    # ถ้าเป็น Google Drive ให้แปลงเป็นลิงก์ดาวน์โหลดตรง
+    
     if "drive.google.com" in url:
         file_id = ""
         if "/d/" in url:
             file_id = url.split("/d/")[1].split("/")[0].split("?")[0]
         elif "id=" in url:
             file_id = url.split("id=")[1].split("&")[0]
+        
         if file_id:
-            return f"https://drive.google.com/uc?export=download&id={file_id}"
+            # ใช้ thumbnail API จะเสถียรกว่าการใช้ uc?export=download
+            return f"https://drive.google.com/thumbnail?sz=w1000&id={file_id}"
+    
     return url
 
+# --- 2. ฟังก์ชันดาวน์โหลดรูปภาพ ---
 def download_image(url):
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
@@ -75,20 +68,22 @@ def get_data_from_sheets():
         st.error(f"❌ เชื่อมต่อผิดพลาด: {e}")
         return None
 
-# --- 4. เริ่มโหลดข้อมูลและแสดงผล ---
+# --- ส่วนของการสร้างหน้าเว็บและตาราง (ยึดตามโค้ดเดิมของคุณ) ---
+st.set_page_config(page_title="ระบบจัดการทรัพย์สิน", layout="wide")
+st.title("📦 ระบบจัดการทรัพย์สิน (Online Report)")
+
+FIELDS = ["ID-Auto", "รูปภาพ", "QR-CODE", "บริษัท", "สถานะทรัพย์สิน", "กลุ่มทรัพย์สิน", "รหัสทรัพย์สิน", "ชื่อทรัพย์สิน1", "แผนก", "วันที่รับเข้าทะเบียน", "วันที่ตัดจากทะเบียน", "หน่วยนับ", "จำนวน", "มูลค่าทุน", "ค่าเสื่อมสะสม", "มูลค่าคงเหลือ", "ข้อมูล ณ วันที่"]
+
 df = get_data_from_sheets()
 
 if df is not None:
-    # ส่วน Sidebar สำหรับกรองข้อมูล
+    # Sidebar
     st.sidebar.header("🔍 กรองข้อมูล")
     search_id = st.sidebar.text_input("ค้นหา ID-Auto")
-    search_comp = st.sidebar.text_input("ค้นหา บริษัท")
-
+    
     filtered_df = df.copy()
     if search_id:
         filtered_df = filtered_df[filtered_df['ID-Auto'].str.contains(search_id, na=False)]
-    if search_comp:
-        filtered_df = filtered_df[filtered_df['บริษัท'].str.contains(search_comp, na=False)]
 
     st.write(f"📊 พบข้อมูล {len(filtered_df)} รายการ")
     selection = st.dataframe(filtered_df, on_select="rerun", selection_mode="single-row", hide_index=True)
@@ -97,12 +92,12 @@ if df is not None:
         item = filtered_df.iloc[selection.selection.rows[0]]
         st.divider()
         
-        # แสดงผลหน้าเว็บ
         col_img, col_txt = st.columns([1, 2])
         with col_img:
-            # แปลงลิงก์เพื่อแสดงผลบน Streamlit
-            st.image(get_drive_direct_link(item['รูปภาพ']) or "https://via.placeholder.com/150", width=300)
-            st.image(get_drive_direct_link(item['QR-CODE']) or "https://via.placeholder.com/100", width=100)
+            img_url = get_drive_direct_link(item['รูปภาพ'])
+            qr_url = get_drive_direct_link(item['QR-CODE'])
+            if img_url: st.image(img_url, caption="รูปทรัพย์สิน", width=300)
+            if qr_url: st.image(qr_url, caption="QR-CODE", width=150)
         
         with col_txt:
             st.subheader(f"📄 {item['ชื่อทรัพย์สิน1']}")
@@ -110,7 +105,7 @@ if df is not None:
                 if f not in ["รูปภาพ", "QR-CODE"]:
                     st.write(f"**{f}:** {item[f]}")
 
-        # --- 5. ฟังก์ชันสร้าง PDF ---
+        # --- 4. ฟังก์ชันสร้าง PDF ---
         def generate_pdf(data):
             buf = BytesIO()
             c = canvas.Canvas(buf, pagesize=A4)
@@ -122,31 +117,30 @@ if df is not None:
             except:
                 c.setFont('Helvetica-Bold', 18)
 
-            # วาดหัวข้อ
             c.drawString(50, h-60, "รายงานข้อมูลทรัพย์สิน")
             c.line(50, h-70, w-50, h-70)
 
-            # วาด QR-CODE
-            qr_url = get_drive_direct_link(data['QR-CODE'])
-            if qr_url:
-                qr_img = download_image(qr_url)
-                if qr_img:
-                    c.drawImage(ImageReader(qr_img), w-130, h-130, 80, 80)
+            # QR Code (มุมขวาบน)
+            q_link = get_drive_direct_link(data['QR-CODE'])
+            if q_link:
+                q_data = download_image(q_link)
+                if q_data:
+                    c.drawImage(ImageReader(q_data), w-130, h-130, 80, 80)
 
-            # รายละเอียดข้อมูล
+            # ข้อมูลตัวอักษร
             c.setFont('ThaiBold', 14)
-            y = h - 100
+            y_pos = h - 100
             for f in FIELDS:
                 if f not in ["รูปภาพ", "QR-CODE"]:
-                    c.drawString(70, y, f"• {f}: {data[f]}")
-                    y -= 22
+                    c.drawString(70, y_pos, f"• {f}: {data[f]}")
+                    y_pos -= 22
 
-            # วาดรูปทรัพย์สิน
-            img_url = get_drive_direct_link(data['รูปภาพ'])
-            if img_url:
-                asset_img = download_image(img_url)
-                if asset_img:
-                    c.drawImage(ImageReader(asset_img), 70, 50, width=250, height=180, preserveAspectRatio=True)
+            # รูปหลัก (ด้านล่าง)
+            i_link = get_drive_direct_link(data['รูปภาพ'])
+            if i_link:
+                i_data = download_image(i_link)
+                if i_data:
+                    c.drawImage(ImageReader(i_data), 70, 50, width=250, height=180, preserveAspectRatio=True)
 
             c.save()
             return buf.getvalue()
