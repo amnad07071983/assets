@@ -92,7 +92,7 @@ if df is not None:
     st.sidebar.subheader("📅 ช่วงวันที่รับเข้าทะเบียน")
     date_selection = st.sidebar.date_input(
         "เลือกช่วงวันที่",
-        value=(datetime(2024, 1, 1), datetime.now()),
+        value=(datetime(1111, 1, 1), datetime.now()),
         format="DD/MM/YYYY"
     )
 
