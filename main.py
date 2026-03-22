@@ -12,32 +12,35 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
 
-# --- 1. ฟังก์ชันดึง URL และแปลงเป็น Direct Link (เน้นใช้ Thumbnail API) ---
+# --- 1. ฟังก์ชันจัดการ URL และสร้าง QR Code ---
 def get_drive_direct_link(cell_value):
+    """แปลงลิงก์ Google Drive ให้เป็น Direct Link (Thumbnail API)"""
     if not cell_value:
         return None
-    
-    # แกะ URL ออกจากสูตร =IMAGE("...") หรือข้อความธรรมดา
     url_match = re.search(r'https?://[^\s"]+', str(cell_value))
     if not url_match:
         return None
     url = url_match.group(0)
-    
     if "drive.google.com" in url:
         file_id = ""
         if "/d/" in url:
             file_id = url.split("/d/")[1].split("/")[0].split("?")[0]
         elif "id=" in url:
             file_id = url.split("id=")[1].split("&")[0]
-        
         if file_id:
-            # ใช้ thumbnail API จะเสถียรกว่าการใช้ uc?export=download
+            # ใช้ Thumbnail API เพื่อความเสถียรในการดึงรูป
             return f"https://drive.google.com/thumbnail?sz=w1000&id={file_id}"
-    
     return url
 
-# --- 2. ฟังก์ชันดาวน์โหลดรูปภาพ ---
+def get_qr_url(id_text):
+    """สร้าง QR Code URL ใหม่จาก ID-Auto โดยใช้ QuickChart API"""
+    if not id_text:
+        return None
+    # สร้าง QR Code จาก ID-Auto โดยตรง (ไม่ต้องใช้สูตรใน Sheet)
+    return f"https://quickchart.io/qr?text={id_text}&size=150"
+
 def download_image(url):
+    """ดาวน์โหลดรูปภาพแปลงเป็น BytesIO"""
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         resp = requests.get(url, headers=headers, timeout=15)
@@ -47,7 +50,17 @@ def download_image(url):
         return None
     return None
 
-# --- 3. ฟังก์ชันเชื่อมต่อ Google Sheets ---
+# --- 2. ตั้งค่าหน้าจอและเชื่อมต่อข้อมูล ---
+st.set_page_config(page_title="ระบบจัดการทรัพย์สิน", layout="wide")
+st.title("📦 ระบบจัดการทรัพย์สิน (Online Report)")
+
+FIELDS = [
+    "ID-Auto", "รูปภาพ", "QR-CODE", "บริษัท", "สถานะทรัพย์สิน", 
+    "กลุ่มทรัพย์สิน", "รหัสทรัพย์สิน", "ชื่อทรัพย์สิน1", "แผนก", 
+    "วันที่รับเข้าทะเบียน", "วันที่ตัดจากทะเบียน", "หน่วยนับ", 
+    "จำนวน", "มูลค่าทุน", "ค่าเสื่อมสะสม", "มูลค่าคงเหลือ", "ข้อมูล ณ วันที่"
+]
+
 @st.cache_resource
 def get_data_from_sheets():
     try:
@@ -68,22 +81,16 @@ def get_data_from_sheets():
         st.error(f"❌ เชื่อมต่อผิดพลาด: {e}")
         return None
 
-# --- ส่วนของการสร้างหน้าเว็บและตาราง (ยึดตามโค้ดเดิมของคุณ) ---
-st.set_page_config(page_title="ระบบจัดการทรัพย์สิน", layout="wide")
-st.title("📦 ระบบจัดการทรัพย์สิน (Online Report)")
-
-FIELDS = ["ID-Auto", "รูปภาพ", "QR-CODE", "บริษัท", "สถานะทรัพย์สิน", "กลุ่มทรัพย์สิน", "รหัสทรัพย์สิน", "ชื่อทรัพย์สิน1", "แผนก", "วันที่รับเข้าทะเบียน", "วันที่ตัดจากทะเบียน", "หน่วยนับ", "จำนวน", "มูลค่าทุน", "ค่าเสื่อมสะสม", "มูลค่าคงเหลือ", "ข้อมูล ณ วันที่"]
-
+# --- 3. ส่วนการแสดงผลหลัก ---
 df = get_data_from_sheets()
 
 if df is not None:
-    # Sidebar
     st.sidebar.header("🔍 กรองข้อมูล")
     search_id = st.sidebar.text_input("ค้นหา ID-Auto")
     
     filtered_df = df.copy()
     if search_id:
-        filtered_df = filtered_df[filtered_df['ID-Auto'].str.contains(search_id, na=False)]
+        filtered_df = filtered_df[filtered_df['ID-Auto'].str.contains(search_id, na=False, case=False)]
 
     st.write(f"📊 พบข้อมูล {len(filtered_df)} รายการ")
     selection = st.dataframe(filtered_df, on_select="rerun", selection_mode="single-row", hide_index=True)
@@ -94,16 +101,22 @@ if df is not None:
         
         col_img, col_txt = st.columns([1, 2])
         with col_img:
-            img_url = get_drive_direct_link(item['รูปภาพ'])
-            qr_url = get_drive_direct_link(item['QR-CODE'])
-            if img_url: st.image(img_url, caption="รูปทรัพย์สิน", width=300)
-            if qr_url: st.image(qr_url, caption="QR-CODE", width=150)
+            # ดึงรูปและสร้าง QR Code
+            img_display_url = get_drive_direct_link(item['รูปภาพ'])
+            qr_display_url = get_qr_url(item['ID-Auto'])
+            
+            if img_display_url: 
+                st.image(img_display_url, caption="รูปทรัพย์สิน", width=300)
+            if qr_display_url: 
+                st.image(qr_display_url, caption="QR-CODE (สร้างจาก ID)", width=150)
         
         with col_txt:
             st.subheader(f"📄 {item['ชื่อทรัพย์สิน1']}")
-            for f in FIELDS:
-                if f not in ["รูปภาพ", "QR-CODE"]:
-                    st.write(f"**{f}:** {item[f]}")
+            d_col1, d_col2 = st.columns(2)
+            for i, field in enumerate(FIELDS):
+                if field not in ["รูปภาพ", "QR-CODE"]:
+                    target = d_col1 if i % 2 == 0 else d_col2
+                    target.write(f"**{field}:** {item[field]}")
 
         # --- 4. ฟังก์ชันสร้าง PDF ---
         def generate_pdf(data):
@@ -112,6 +125,7 @@ if df is not None:
             w, h = A4
             
             try:
+                # ตรวจสอบชื่อไฟล์ฟอนต์ให้ตรงกับใน GitHub
                 pdfmetrics.registerFont(TTFont('ThaiBold', 'THSARABUN BOLD.ttf'))
                 c.setFont('ThaiBold', 22)
             except:
@@ -120,29 +134,34 @@ if df is not None:
             c.drawString(50, h-60, "รายงานข้อมูลทรัพย์สิน")
             c.line(50, h-70, w-50, h-70)
 
-            # QR Code (มุมขวาบน)
-            q_link = get_drive_direct_link(data['QR-CODE'])
-            if q_link:
-                q_data = download_image(q_link)
-                if q_data:
-                    c.drawImage(ImageReader(q_data), w-130, h-130, 80, 80)
+            # วาด QR Code (สร้างใหม่จาก ID-Auto)
+            qr_pdf_url = get_qr_url(data['ID-Auto'])
+            if qr_pdf_url:
+                qr_data = download_image(qr_pdf_url)
+                if qr_data:
+                    c.drawImage(ImageReader(qr_data), w-130, h-130, 80, 80)
 
             # ข้อมูลตัวอักษร
             c.setFont('ThaiBold', 14)
             y_pos = h - 100
             for f in FIELDS:
                 if f not in ["รูปภาพ", "QR-CODE"]:
-                    c.drawString(70, y_pos, f"• {f}: {data[f]}")
+                    c.drawString(70, y_pos, f"• {field_val}: {data[f]}" if (field_val := f) else f)
                     y_pos -= 22
 
             # รูปหลัก (ด้านล่าง)
-            i_link = get_drive_direct_link(data['รูปภาพ'])
-            if i_link:
-                i_data = download_image(i_link)
-                if i_data:
-                    c.drawImage(ImageReader(i_data), 70, 50, width=250, height=180, preserveAspectRatio=True)
+            img_pdf_url = get_drive_direct_link(data['รูปภาพ'])
+            if img_pdf_url:
+                img_data = download_image(img_pdf_url)
+                if img_data:
+                    c.drawImage(ImageReader(img_data), 70, 50, width=250, height=180, preserveAspectRatio=True)
 
             c.save()
             return buf.getvalue()
 
-        st.download_button("📥 ดาวน์โหลด PDF", data=generate_pdf(item), file_name=f"{item['ID-Auto']}.pdf")
+        st.download_button(
+            label="📥 ดาวน์โหลดรายงาน PDF",
+            data=generate_pdf(item),
+            file_name=f"Asset_Report_{item['ID-Auto']}.pdf",
+            mime="application/pdf"
+        )
