@@ -18,7 +18,7 @@ from streamlit_qrcode_scanner import qrcode_scanner
 st.set_page_config(page_title="ระบบจัดการทรัพย์สิน", layout="wide")
 # ปรับ CSS เล็กน้อยเพื่อลด Padding ด้านบนสุดของหน้าจอ
 st.markdown("""<style>.block-container {padding-top: 1rem;}</style>""", unsafe_allow_html=True)
-st.title("📦 ระบบจัดการทรัพย์สิน (Online Report)")
+st.title("📦 Assets Check")
 
 FIELDS = [
     "ID-Auto", "รูปภาพ", "QR-CODE", "บริษัท", "สถานะทรัพย์สิน", 
@@ -146,7 +146,7 @@ if df is not None:
                     pdfmetrics.registerFont(TTFont('ThaiBold', 'THSARABUN BOLD.ttf'))
                     c.setFont('ThaiBold', 22)
                 except: c.setFont('Helvetica-Bold', 18)
-                c.drawString(50, h-60, "รายงานข้อมูลทรัพย์สิน")
+                c.drawString(50, h-60, "รายละเอียดทรัพย์สิน")
                 c.line(50, h-70, w-50, h-70)
                 q_url = get_qr_url(data['ID-Auto'])
                 if q_url:
