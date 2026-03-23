@@ -16,9 +16,24 @@ from streamlit_qrcode_scanner import qrcode_scanner
 
 # --- 1. ตั้งค่าหน้าจอแอป ---
 st.set_page_config(page_title="ระบบจัดการทรัพย์สิน", layout="wide")
-# ปรับ CSS เล็กน้อยเพื่อลด Padding ด้านบนสุดของหน้าจอ
-st.markdown("""<style>.block-container {padding-top: 1rem;}</style>""", unsafe_allow_html=True)
+# ปรับ CSS เพื่อลด Padding และปรับขนาด Scanner
+st.markdown("""
+    <style>
+    .block-container {padding-top: 1rem;}
+    /* บังคับขนาดของตัวสแกน QR ผ่าน CSS */
+    div[data-testid="stVerticalBlock"] > div:has(iframe) {
+        max-width: 300px;
+        margin: 0 auto;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 st.title("📦 Assets Check")
+
+# --- 2. ลิงก์เปิดฐานข้อมูล (ข้อ 2) ---
+SHEET_ID = "1Pp2XffqRBtlyDu6NHDmFA6VcbdCmZPEv-1p3ETCSb5o"
+sheet_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
+st.markdown(f"🔗 **ฐานข้อมูลหลัก:** [เปิด Google Sheets]({sheet_url})")
 
 FIELDS = [
     "ID-Auto", "รูปภาพ", "QR-CODE", "บริษัท", "สถานะทรัพย์สิน", 
@@ -27,7 +42,7 @@ FIELDS = [
     "จำนวน", "มูลค่าทุน", "ค่าเสื่อมสะสม", "มูลค่าคงเหลือ", "ข้อมูล ณ วันที่"
 ]
 
-# --- 2. ฟังก์ชันเสริม ---
+# --- 3. ฟังก์ชันเสริม ---
 def get_drive_direct_link(cell_value):
     if not cell_value: return None
     url_match = re.search(r'https?://[^\s"]+', str(cell_value))
@@ -52,7 +67,7 @@ def download_image(url):
     except: return None
     return None
 
-# --- 3. เชื่อมต่อ Google Sheets ---
+# --- 4. เชื่อมต่อ Google Sheets ---
 @st.cache_resource
 def get_data_from_sheets():
     try:
@@ -60,7 +75,6 @@ def get_data_from_sheets():
         creds_info = st.secrets["gcp_service_account"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, scope)
         client = gspread.authorize(creds)
-        SHEET_ID = "1Pp2XffqRBtlyDu6NHDmFA6VcbdCmZPEv-1p3ETCSb5o" 
         sh = client.open_by_key(SHEET_ID) 
         worksheet = sh.worksheet("online")
         data = worksheet.get_all_values()
@@ -73,10 +87,13 @@ def get_data_from_sheets():
 df = get_data_from_sheets()
 
 if df is not None:
-    # --- 4. Sidebar ---
+    # --- 5. Sidebar ---
     st.sidebar.header("🔍 ค้นหาและกรองข้อมูล")
+    
+    # ลดขนาดพื้นที่สแกน (ข้อ 1)
     st.sidebar.subheader("📷 สแกน QR Code")
-    scanned_value = qrcode_scanner(key='scanner')
+    with st.sidebar.container():
+        scanned_value = qrcode_scanner(key='scanner')
     
     if scanned_value:
         st.sidebar.success(f"สแกนพบ: {scanned_value}")
@@ -85,6 +102,10 @@ if df is not None:
         search_id = st.sidebar.text_input("ค้นหา ID-Auto", placeholder="พิมพ์ ID หรือสแกน...")
 
     search_comp = st.sidebar.text_input("ค้นหา บริษัท", placeholder="พิมพ์ชื่อบริษัท...")
+    
+    # เพิ่มคำสั่งค้นหา กลุ่มทรัพย์สิน และ ชื่อทรัพย์สิน (ข้อ 3)
+    search_group = st.sidebar.text_input("ค้นหา กลุ่มทรัพย์สิน", placeholder="พิมพ์กลุ่มทรัพย์สิน...")
+    search_name = st.sidebar.text_input("ค้นหา ชื่อทรัพย์สิน", placeholder="พิมพ์ชื่อทรัพย์สิน...")
     
     # ปรับวันที่สิ้นสุดให้ยาวขึ้น (10 ปี)
     st.sidebar.subheader("📅 ช่วงวันที่รับเข้าทะเบียน")
@@ -100,13 +121,17 @@ if df is not None:
         filtered_df = filtered_df[filtered_df['ID-Auto'].str.contains(search_id, case=False, na=False)]
     if search_comp:
         filtered_df = filtered_df[filtered_df['บริษัท'].str.contains(search_comp, case=False, na=False)]
+    if search_group:
+        filtered_df = filtered_df[filtered_df['กลุ่มทรัพย์สิน'].str.contains(search_group, case=False, na=False)]
+    if search_name:
+        filtered_df = filtered_df[filtered_df['ชื่อทรัพย์สิน1'].str.contains(search_name, case=False, na=False)]
     
     if isinstance(date_selection, tuple) and len(date_selection) == 2:
         start_d, end_d = date_selection
         filtered_df['dt_temp'] = pd.to_datetime(filtered_df['วันที่รับเข้าทะเบียน'], dayfirst=True, errors='coerce')
         filtered_df = filtered_df[(filtered_df['dt_temp'].dt.date >= start_d) & (filtered_df['dt_temp'].dt.date <= end_d)]
 
-    # --- 5. ย้ายตารางมาไว้ด้านบน เพื่อลดที่ว่าง ---
+    # --- 6. ตารางแสดงผล ---
     st.write(f"📊 พบข้อมูล **{len(filtered_df)}** รายการ (คลิกที่แถวเพื่อดูรายละเอียด)")
     selection = st.dataframe(
         filtered_df.drop(columns=['dt_temp'], errors='ignore'), 
@@ -114,13 +139,13 @@ if df is not None:
         on_select="rerun", 
         selection_mode="single-row",
         hide_index=True,
-        height=300 # กำหนดความสูงตารางเพื่อประหยัดพื้นที่
+        height=300 
     )
 
-    # --- 6. แสดงรายละเอียดเมื่อมีการเลือก ---
+    # --- 7. แสดงรายละเอียดเมื่อมีการเลือก ---
     if len(selection.selection.rows) > 0:
         item = filtered_df.iloc[selection.selection.rows[0]]
-        st.divider() # ใช้เส้นคั่นบางๆ แทนช่องว่างใหญ่ๆ
+        st.divider() 
         
         col_img, col_detail = st.columns([1, 2])
         with col_img:
@@ -137,7 +162,7 @@ if df is not None:
                     target = info_1 if i % 2 == 0 else info_2
                     target.write(f"**{field}:** {item[field]}")
 
-            # --- 7. PDF Function ---
+            # --- 8. PDF Function ---
             def generate_pdf(data):
                 buf = BytesIO()
                 c = canvas.Canvas(buf, pagesize=A4)
