@@ -16,11 +16,9 @@ from streamlit_qrcode_scanner import qrcode_scanner
 
 # --- 1. ตั้งค่าหน้าจอแอป ---
 st.set_page_config(page_title="ระบบจัดการทรัพย์สิน", layout="wide")
-# ปรับ CSS เพื่อลด Padding และปรับขนาด Scanner
 st.markdown("""
     <style>
     .block-container {padding-top: 1rem;}
-    /* บังคับขนาดของตัวสแกน QR ผ่าน CSS */
     div[data-testid="stVerticalBlock"] > div:has(iframe) {
         max-width: 300px;
         margin: 0 auto;
@@ -30,7 +28,7 @@ st.markdown("""
 
 st.title("📦 Assets Check")
 
-# --- 2. ลิงก์เปิดฐานข้อมูล (ข้อ 2) ---
+# --- 2. ลิงก์เปิดฐานข้อมูล ---
 SHEET_ID = "1Pp2XffqRBtlyDu6NHDmFA6VcbdCmZPEv-1p3ETCSb5o"
 sheet_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 st.markdown(f"🔗 **ฐานข้อมูลหลัก:** [เปิด Google Sheets]({sheet_url})")
@@ -87,27 +85,37 @@ def get_data_from_sheets():
 df = get_data_from_sheets()
 
 if df is not None:
-    # --- 5. Sidebar ---
+    # --- 5. Sidebar (อัปเดตการจัดการ State) ---
     st.sidebar.header("🔍 ค้นหาและกรองข้อมูล")
     
-    # ลดขนาดพื้นที่สแกน (ข้อ 1)
     st.sidebar.subheader("📷 สแกน QR Code")
     with st.sidebar.container():
-        scanned_value = qrcode_scanner(key='scanner')
+        # กำหนด key สำหรับตัวสแกน
+        scanned_value = qrcode_scanner(key='qr_scanner_component')
     
+    # ถ้ามีการสแกนใหม่ ให้เอาค่านั้นไปใส่ใน session_state ของช่องค้นหา
     if scanned_value:
-        st.sidebar.success(f"สแกนพบ: {scanned_value}")
-        search_id = st.sidebar.text_input("ค้นหา ID-Auto", value=scanned_value)
-    else:
-        search_id = st.sidebar.text_input("ค้นหา ID-Auto", placeholder="พิมพ์ ID หรือสแกน...")
+        st.session_state['search_id_state'] = scanned_value
 
+    # ช่องค้นหา ID-Auto ที่ผูกกับ session_state
+    search_id = st.sidebar.text_input(
+        "ค้นหา ID-Auto", 
+        value=st.session_state.get('search_id_state', ''),
+        key='search_id_state',
+        placeholder="พิมพ์ ID หรือสแกน..."
+    )
+
+    # เพิ่มปุ่ม Reset เพื่อล้างค่าทั้งหมดใน Sidebar
+    if st.sidebar.button("🔄 ล้างการค้นหาทั้งหมด", use_container_width=True):
+        st.session_state['search_id_state'] = ""
+        # เคลียร์ค่าอื่นๆ ถ้าจำเป็น
+        st.rerun()
+
+    st.sidebar.divider()
     search_comp = st.sidebar.text_input("ค้นหา บริษัท", placeholder="พิมพ์ชื่อบริษัท...")
-    
-    # เพิ่มคำสั่งค้นหา กลุ่มทรัพย์สิน และ ชื่อทรัพย์สิน (ข้อ 3)
     search_group = st.sidebar.text_input("ค้นหา กลุ่มทรัพย์สิน", placeholder="พิมพ์กลุ่มทรัพย์สิน...")
     search_name = st.sidebar.text_input("ค้นหา ชื่อทรัพย์สิน", placeholder="พิมพ์ชื่อทรัพย์สิน...")
     
-    # ปรับวันที่สิ้นสุดให้ยาวขึ้น (10 ปี)
     st.sidebar.subheader("📅 ช่วงวันที่รับเข้าทะเบียน")
     date_selection = st.sidebar.date_input(
         "เลือกช่วงวันที่",
