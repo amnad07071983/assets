@@ -16,11 +16,18 @@ from streamlit_qrcode_scanner import qrcode_scanner
 
 # --- 1. ตั้งค่าหน้าจอแอป ---
 st.set_page_config(page_title="ระบบจัดการทรัพย์สิน", layout="wide")
+
+# 初始化 Session State (เพิ่มส่วนนี้เพื่อให้ค่าไม่หายเวลา Rerun)
+if 'search_id_state' not in st.session_state:
+    st.session_state['search_id_state'] = ""
+
 st.markdown("""
     <style>
     .block-container {padding-top: 1rem;}
+    /* ปรับขนาดกล่องสแกนให้เหมาะสม */
     div[data-testid="stVerticalBlock"] > div:has(iframe) {
-        max-width: 300px;
+        min-height: 300px;
+        max-width: 100%;
         margin: 0 auto;
     }
     </style>
@@ -28,7 +35,7 @@ st.markdown("""
 
 st.title("📦 Assets Check")
 
-# --- 2. ลิงก์เปิดฐานข้อมูล ---
+# --- 2. ลิงก์เปิดฐานข้อมูล (คงเดิม) ---
 SHEET_ID = "1Pp2XffqRBtlyDu6NHDmFA6VcbdCmZPEv-1p3ETCSb5o"
 sheet_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 st.markdown(f"🔗 **ฐานข้อมูลหลัก:** [เปิด Google Sheets]({sheet_url})")
@@ -40,7 +47,7 @@ FIELDS = [
     "จำนวน", "มูลค่าทุน", "ค่าเสื่อมสะสม", "มูลค่าคงเหลือ", "ข้อมูล ณ วันที่"
 ]
 
-# --- 3. ฟังก์ชันเสริม ---
+# --- 3. ฟังก์ชันเสริม (คงเดิม) ---
 def get_drive_direct_link(cell_value):
     if not cell_value: return None
     url_match = re.search(r'https?://[^\s"]+', str(cell_value))
@@ -65,7 +72,7 @@ def download_image(url):
     except: return None
     return None
 
-# --- 4. เชื่อมต่อ Google Sheets ---
+# --- 4. เชื่อมต่อ Google Sheets (คงเดิม) ---
 @st.cache_resource
 def get_data_from_sheets():
     try:
@@ -85,30 +92,33 @@ def get_data_from_sheets():
 df = get_data_from_sheets()
 
 if df is not None:
-    # --- 5. Sidebar (อัปเดตการจัดการ State) ---
+    # --- 5. Sidebar (จุดที่มีการแก้ไขการทำงานของ QR) ---
     st.sidebar.header("🔍 ค้นหาและกรองข้อมูล")
     
     st.sidebar.subheader("📷 สแกน QR Code")
+    # วาง qrcode_scanner ไว้ในตัวแปร และระบุ key ให้ชัดเจน
+    # เพิ่ม container เพื่อล็อกพื้นที่
     with st.sidebar.container():
-        # กำหนด key สำหรับตัวสแกน
-        scanned_value = qrcode_scanner(key='qr_scanner_component')
+        scanned_value = qrcode_scanner(key='my_qr_scanner')
     
-    # ถ้ามีการสแกนใหม่ ให้เอาค่านั้นไปใส่ใน session_state ของช่องค้นหา
-    if scanned_value:
+    # ถ้าสแกนได้ค่าใหม่ และค่านั้นไม่ตรงกับค่าเดิมใน state ให้ update และ rerun
+    if scanned_value and scanned_value != st.session_state['search_id_state']:
         st.session_state['search_id_state'] = scanned_value
+        st.rerun()
 
     # ช่องค้นหา ID-Auto ที่ผูกกับ session_state
     search_id = st.sidebar.text_input(
         "ค้นหา ID-Auto", 
-        value=st.session_state.get('search_id_state', ''),
-        key='search_id_state',
+        value=st.session_state['search_id_state'],
+        key='search_input_field',
         placeholder="พิมพ์ ID หรือสแกน..."
     )
+    
+    # อัปเดตค่ากลับเข้า state หากผู้ใช้พิมพ์เอง
+    st.session_state['search_id_state'] = search_id
 
-    # เพิ่มปุ่ม Reset เพื่อล้างค่าทั้งหมดใน Sidebar
     if st.sidebar.button("🔄 ล้างการค้นหาทั้งหมด", use_container_width=True):
         st.session_state['search_id_state'] = ""
-        # เคลียร์ค่าอื่นๆ ถ้าจำเป็น
         st.rerun()
 
     st.sidebar.divider()
@@ -123,10 +133,11 @@ if df is not None:
         format="DD/MM/YYYY"
     )
 
-    # กรองข้อมูล
+    # --- ส่วนที่เหลือ (กรองข้อมูล, ตาราง, รายละเอียด, PDF) คงเดิมทั้งหมดตามโค้ดต้นฉบับ ---
+    # ... (ส่วนการกรองข้อมูลและแสดงผลเหมือนเดิมทุกประการ) ...
     filtered_df = df.copy()
     if search_id:
-        filtered_df = filtered_df[filtered_df['ID-Auto'].str.contains(search_id, case=False, na=False)]
+        filtered_df = filtered_df[filtered_df['ID-Auto'].astype(str).str.contains(search_id, case=False, na=False)]
     if search_comp:
         filtered_df = filtered_df[filtered_df['บริษัท'].str.contains(search_comp, case=False, na=False)]
     if search_group:
@@ -139,7 +150,6 @@ if df is not None:
         filtered_df['dt_temp'] = pd.to_datetime(filtered_df['วันที่รับเข้าทะเบียน'], dayfirst=True, errors='coerce')
         filtered_df = filtered_df[(filtered_df['dt_temp'].dt.date >= start_d) & (filtered_df['dt_temp'].dt.date <= end_d)]
 
-    # --- 6. ตารางแสดงผล ---
     st.write(f"📊 พบข้อมูล **{len(filtered_df)}** รายการ (คลิกที่แถวเพื่อดูรายละเอียด)")
     selection = st.dataframe(
         filtered_df.drop(columns=['dt_temp'], errors='ignore'), 
@@ -150,7 +160,6 @@ if df is not None:
         height=300 
     )
 
-    # --- 7. แสดงรายละเอียดเมื่อมีการเลือก ---
     if len(selection.selection.rows) > 0:
         item = filtered_df.iloc[selection.selection.rows[0]]
         st.divider() 
@@ -170,7 +179,6 @@ if df is not None:
                     target = info_1 if i % 2 == 0 else info_2
                     target.write(f"**{field}:** {item[field]}")
 
-            # --- 8. PDF Function ---
             def generate_pdf(data):
                 buf = BytesIO()
                 c = canvas.Canvas(buf, pagesize=A4)
@@ -207,6 +215,5 @@ if df is not None:
             )
     else:
         st.info("👈 กรุณาคลิกเลือกรายการในตารางด้านบน")
-
 else:
     st.info("💡 กรุณาตรวจสอบการเชื่อมต่อ Google Sheets")
