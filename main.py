@@ -158,12 +158,11 @@ if df is not None:
         item = filtered_df.iloc[selection.selection.rows[0]]
         st.divider() 
         
-        # --- แสดงผลรายละเอียดพร้อมใส่กรอบ ---
+        # --- แสดงผลรายละเอียดพร้อมใส่กรอบและรูปภาพขนาดใหญ่ ---
         col_img, col_detail = st.columns([1.5, 1.5]) 
         
         with col_img:
-            # ใช้ container border=True เพื่อสร้างกรอบรอบรูปภาพ
-            with st.container(border=True):
+            with st.container(border=True): # ใส่กรอบส่วนรูปภาพ
                 img_url = get_drive_direct_link(item['รูปภาพ'])
                 qr_url = get_qr_url(item['ID-Auto'])
                 if img_url: 
@@ -173,8 +172,7 @@ if df is not None:
                     st.image(qr_url, caption="🔗 QR-CODE", width=150)
             
         with col_detail:
-            # ใช้ container border=True เพื่อสร้างกรอบรอบรายละเอียดข้อมูล
-            with st.container(border=True):
+            with st.container(border=True): # ใส่กรอบส่วนรายละเอียด
                 st.subheader(f"📄 รายละเอียด: {item['ชื่อทรัพย์สิน1']}")
                 info_1, info_2 = st.columns(2)
                 for i, field in enumerate(FIELDS):
@@ -182,31 +180,54 @@ if df is not None:
                         target = info_1 if i % 2 == 0 else info_2
                         target.write(f"**{field}:** {item[field]}")
 
-            # ฟังก์ชันสร้าง PDF (คงเดิม)
+            # --- ฟังก์ชันสร้าง PDF พร้อมกรอบและประทับเวลา ---
             def generate_pdf(data):
                 buf = BytesIO()
                 c = canvas.Canvas(buf, pagesize=A4)
                 w, h = A4
+                
+                # วาดกรอบรอบหน้ากระดาษ (Border)
+                c.setLineWidth(1)
+                c.rect(40, 40, w-80, h-80)
+
                 try:
                     pdfmetrics.registerFont(TTFont('ThaiBold', 'THSARABUN BOLD.ttf'))
                     c.setFont('ThaiBold', 22)
-                except: c.setFont('Helvetica-Bold', 18)
-                c.drawString(50, h-60, "รายละเอียดทรัพย์สิน")
-                c.line(50, h-70, w-50, h-70)
+                except: 
+                    c.setFont('Helvetica-Bold', 18)
+                
+                c.drawString(60, h-80, "รายละเอียดทรัพย์สิน")
+                c.line(60, h-90, w-60, h-90)
+                
+                # QR Code ใน PDF
                 q_url = get_qr_url(data['ID-Auto'])
                 if q_url:
                     q_data = download_image(q_url)
-                    if q_data: c.drawImage(ImageReader(q_data), w-130, h-130, 80, 80)
+                    if q_data: 
+                        c.drawImage(ImageReader(q_data), w-140, h-140, 80, 80)
+                
+                # รายละเอียดข้อมูลใน PDF
                 c.setFont('ThaiBold', 14)
-                curr_y = h - 110
+                curr_y = h - 130
                 for f in FIELDS:
                     if f not in ["รูปภาพ", "QR-CODE"]:
-                        c.drawString(70, curr_y, f"• {f}: {data[f]}")
+                        c.drawString(80, curr_y, f"• {f}: {data[f]}")
                         curr_y -= 22
+                
+                # รูปทรัพย์สินใน PDF
                 i_url = get_drive_direct_link(data['รูปภาพ'])
                 if i_url:
                     i_data = download_image(i_url)
-                    if i_data: c.drawImage(ImageReader(i_data), 70, 50, width=250, height=180, preserveAspectRatio=True)
+                    if i_data: 
+                        c.drawImage(ImageReader(i_data), 80, 70, width=300, height=200, preserveAspectRatio=True)
+                
+                # ประทับวันที่และเวลา (Footer)
+                print_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                try: c.setFont('ThaiBold', 10)
+                except: c.setFont('Helvetica', 9)
+                c.drawString(60, 50, f"วันที่พิมพ์เอกสาร: {print_time}")
+                c.drawRightString(w-60, 50, "ระบบจัดการทรัพย์สิน Assets Check")
+
                 c.save()
                 return buf.getvalue()
 
