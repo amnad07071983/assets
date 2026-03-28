@@ -179,7 +179,7 @@ if df is not None:
                         target = info_1 if i % 2 == 0 else info_2
                         target.write(f"**{field}:** {item[field]}")
 
-            # --- ฟังก์ชันสร้าง PDF (แก้ไข: เอาเวลาออก + ขยายรูป 2 เท่า) ---
+            # --- ฟังก์ชันสร้าง PDF (แก้ไข: ย้าย QR ลงล่างซ้าย + เลื่อนตัวอักษรขึ้น) ---
             def generate_pdf(data):
                 buf = BytesIO()
                 c = canvas.Canvas(buf, pagesize=A4)
@@ -198,30 +198,29 @@ if df is not None:
                 c.drawString(60, h-80, "รายละเอียดทรัพย์สิน")
                 c.line(60, h-90, w-60, h-90)
                 
-                # QR Code
-                q_url = get_qr_url(data['ID-Auto'])
-                if q_url:
-                    q_data = download_image(q_url)
-                    if q_data: 
-                        c.drawImage(ImageReader(q_data), w-140, h-140, 80, 80)
-                
-                # รายละเอียดข้อมูล
+                # รายละเอียดข้อมูล (เลื่อนขึ้น 2 บรรทัด จาก h-130 เป็น h-105)
                 c.setFont('ThaiBold', 14)
-                curr_y = h - 130
+                curr_y = h - 105 
                 for f in FIELDS:
                     if f not in ["รูปภาพ", "QR-CODE"]:
                         c.drawString(80, curr_y, f"• {f}: {data[f]}")
                         curr_y -= 22
                 
-                # รูปทรัพย์สิน (ขยาย 2 เท่า: จาก width 300 เป็น 600)
+                # รูปทรัพย์สิน (ขนาดใหญ่ 2 เท่า)
                 i_url = get_drive_direct_link(data['รูปภาพ'])
                 if i_url:
                     i_data = download_image(i_url)
                     if i_data: 
-                        # วางรูปให้เกือบเต็มความกว้างกรอบ (w-120) และปรับความสูงให้สมดุล
-                        c.drawImage(ImageReader(i_data), 60, 60, width=w-120, height=350, preserveAspectRatio=True)
+                        c.drawImage(ImageReader(i_data), 60, 120, width=w-120, height=350, preserveAspectRatio=True)
                 
-                # Footer (เอาวันที่เวลาออก เหลือเพียงชื่อระบบ)
+                # ย้าย QR Code มาอยู่ด้านล่างซ้าย
+                q_url = get_qr_url(data['ID-Auto'])
+                if q_url:
+                    q_data = download_image(q_url)
+                    if q_data: 
+                        c.drawImage(ImageReader(q_data), 60, 50, 60, 60)
+                
+                # Footer
                 try: c.setFont('ThaiBold', 10)
                 except: c.setFont('Helvetica', 9)
                 c.drawRightString(w-60, 50, "ระบบจัดการทรัพย์สิน Assets Check")
