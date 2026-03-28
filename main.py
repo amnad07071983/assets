@@ -17,7 +17,7 @@ from streamlit_qrcode_scanner import qrcode_scanner
 # --- 1. ตั้งค่าหน้าจอแอป ---
 st.set_page_config(page_title="ระบบจัดการทรัพย์สิน", layout="wide")
 
-# 初始化 Session State (เพิ่มส่วนนี้เพื่อให้ค่าไม่หายเวลา Rerun)
+# 初始化 Session State
 if 'search_id_state' not in st.session_state:
     st.session_state['search_id_state'] = ""
 
@@ -35,7 +35,7 @@ st.markdown("""
 
 st.title("📦 Assets Check")
 
-# --- 2. ลิงก์เปิดฐานข้อมูล (คงเดิม) ---
+# --- 2. ลิงก์เปิดฐานข้อมูล ---
 SHEET_ID = "1Pp2XffqRBtlyDu6NHDmFA6VcbdCmZPEv-1p3ETCSb5o"
 sheet_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 st.markdown(f"🔗 **ฐานข้อมูลหลัก:** [เปิด Google Sheets]({sheet_url})")
@@ -47,7 +47,7 @@ FIELDS = [
     "จำนวน", "มูลค่าทุน", "ค่าเสื่อมสะสม", "มูลค่าคงเหลือ", "ข้อมูล ณ วันที่"
 ]
 
-# --- 3. ฟังก์ชันเสริม (คงเดิม) ---
+# --- 3. ฟังก์ชันเสริม ---
 def get_drive_direct_link(cell_value):
     if not cell_value: return None
     url_match = re.search(r'https?://[^\s"]+', str(cell_value))
@@ -72,7 +72,7 @@ def download_image(url):
     except: return None
     return None
 
-# --- 4. เชื่อมต่อ Google Sheets (คงเดิม) ---
+# --- 4. เชื่อมต่อ Google Sheets ---
 @st.cache_resource
 def get_data_from_sheets():
     try:
@@ -92,21 +92,17 @@ def get_data_from_sheets():
 df = get_data_from_sheets()
 
 if df is not None:
-    # --- 5. Sidebar (จุดที่มีการแก้ไขการทำงานของ QR) ---
+    # --- 5. Sidebar ---
     st.sidebar.header("🔍 ค้นหาและกรองข้อมูล")
     
     st.sidebar.subheader("📷 สแกน QR Code")
-    # วาง qrcode_scanner ไว้ในตัวแปร และระบุ key ให้ชัดเจน
-    # เพิ่ม container เพื่อล็อกพื้นที่
     with st.sidebar.container():
         scanned_value = qrcode_scanner(key='my_qr_scanner')
     
-    # ถ้าสแกนได้ค่าใหม่ และค่านั้นไม่ตรงกับค่าเดิมใน state ให้ update และ rerun
     if scanned_value and scanned_value != st.session_state['search_id_state']:
         st.session_state['search_id_state'] = scanned_value
         st.rerun()
 
-    # ช่องค้นหา ID-Auto ที่ผูกกับ session_state
     search_id = st.sidebar.text_input(
         "ค้นหา ID-Auto", 
         value=st.session_state['search_id_state'],
@@ -114,7 +110,6 @@ if df is not None:
         placeholder="พิมพ์ ID หรือสแกน..."
     )
     
-    # อัปเดตค่ากลับเข้า state หากผู้ใช้พิมพ์เอง
     st.session_state['search_id_state'] = search_id
 
     if st.sidebar.button("🔄 ล้างการค้นหาทั้งหมด", use_container_width=True):
@@ -133,8 +128,7 @@ if df is not None:
         format="DD/MM/YYYY"
     )
 
-    # --- ส่วนที่เหลือ (กรองข้อมูล, ตาราง, รายละเอียด, PDF) คงเดิมทั้งหมดตามโค้ดต้นฉบับ ---
-    # ... (ส่วนการกรองข้อมูลและแสดงผลเหมือนเดิมทุกประการ) ...
+    # --- กรองข้อมูล ---
     filtered_df = df.copy()
     if search_id:
         filtered_df = filtered_df[filtered_df['ID-Auto'].astype(str).str.contains(search_id, case=False, na=False)]
@@ -164,21 +158,31 @@ if df is not None:
         item = filtered_df.iloc[selection.selection.rows[0]]
         st.divider() 
         
-        col_img, col_detail = st.columns([1, 2])
+        # --- แสดงผลรายละเอียดพร้อมใส่กรอบ ---
+        col_img, col_detail = st.columns([1.5, 1.5]) 
+        
         with col_img:
-            img_url = get_drive_direct_link(item['รูปภาพ'])
-            qr_url = get_qr_url(item['ID-Auto'])
-            if img_url: st.image(img_url, caption="📸 รูปทรัพย์สิน", use_container_width=True)
-            if qr_url: st.image(qr_url, caption="🔗 QR-CODE", width=130)
+            # ใช้ container border=True เพื่อสร้างกรอบรอบรูปภาพ
+            with st.container(border=True):
+                img_url = get_drive_direct_link(item['รูปภาพ'])
+                qr_url = get_qr_url(item['ID-Auto'])
+                if img_url: 
+                    st.image(img_url, caption="📸 รูปทรัพย์สิน", use_container_width=True)
+                
+                if qr_url: 
+                    st.image(qr_url, caption="🔗 QR-CODE", width=150)
             
         with col_detail:
-            st.subheader(f"📄 รายละเอียด: {item['ชื่อทรัพย์สิน1']}")
-            info_1, info_2 = st.columns(2)
-            for i, field in enumerate(FIELDS):
-                if field not in ["รูปภาพ", "QR-CODE"]:
-                    target = info_1 if i % 2 == 0 else info_2
-                    target.write(f"**{field}:** {item[field]}")
+            # ใช้ container border=True เพื่อสร้างกรอบรอบรายละเอียดข้อมูล
+            with st.container(border=True):
+                st.subheader(f"📄 รายละเอียด: {item['ชื่อทรัพย์สิน1']}")
+                info_1, info_2 = st.columns(2)
+                for i, field in enumerate(FIELDS):
+                    if field not in ["รูปภาพ", "QR-CODE"]:
+                        target = info_1 if i % 2 == 0 else info_2
+                        target.write(f"**{field}:** {item[field]}")
 
+            # ฟังก์ชันสร้าง PDF (คงเดิม)
             def generate_pdf(data):
                 buf = BytesIO()
                 c = canvas.Canvas(buf, pagesize=A4)
