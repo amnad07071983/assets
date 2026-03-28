@@ -179,7 +179,7 @@ if df is not None:
                         target = info_1 if i % 2 == 0 else info_2
                         target.write(f"**{field}:** {item[field]}")
 
-            # --- ฟังก์ชันสร้าง PDF (แก้ไข: ย้าย QR ลงล่างซ้าย + เลื่อนตัวอักษรขึ้น) ---
+            # --- ฟังก์ชันสร้าง PDF (แก้ไข: เลื่อนรูปลงระดับเดียวกับ QR + เอา Footer ออก) ---
             def generate_pdf(data):
                 buf = BytesIO()
                 c = canvas.Canvas(buf, pagesize=A4)
@@ -198,7 +198,7 @@ if df is not None:
                 c.drawString(60, h-80, "รายละเอียดทรัพย์สิน")
                 c.line(60, h-90, w-60, h-90)
                 
-                # รายละเอียดข้อมูล (เลื่อนขึ้น 2 บรรทัด จาก h-130 เป็น h-105)
+                # รายละเอียดข้อมูล
                 c.setFont('ThaiBold', 14)
                 curr_y = h - 105 
                 for f in FIELDS:
@@ -206,24 +206,22 @@ if df is not None:
                         c.drawString(80, curr_y, f"• {f}: {data[f]}")
                         curr_y -= 22
                 
-                # รูปทรัพย์สิน (ขนาดใหญ่ 2 เท่า)
+                # รูปทรัพย์สิน (เลื่อนลงมาที่ y=50 เพื่อให้ท้ายเท่ากับ QR-CODE)
                 i_url = get_drive_direct_link(data['รูปภาพ'])
                 if i_url:
                     i_data = download_image(i_url)
                     if i_data: 
-                        c.drawImage(ImageReader(i_data), 60, 120, width=w-120, height=350, preserveAspectRatio=True)
+                        # ปรับตำแหน่ง y=50 เพื่อให้ฐานรูปภาพขนานกับ QR Code
+                        c.drawImage(ImageReader(i_data), 140, 50, width=w-200, height=350, preserveAspectRatio=True)
                 
-                # ย้าย QR Code มาอยู่ด้านล่างซ้าย
+                # QR Code (มุมล่างซ้าย)
                 q_url = get_qr_url(data['ID-Auto'])
                 if q_url:
                     q_data = download_image(q_url)
                     if q_data: 
                         c.drawImage(ImageReader(q_data), 60, 50, 60, 60)
                 
-                # Footer
-                try: c.setFont('ThaiBold', 10)
-                except: c.setFont('Helvetica', 9)
-                c.drawRightString(w-60, 50, "ระบบจัดการทรัพย์สิน Assets Check")
+                # (Footer เอาชื่อระบบออกแล้ว)
 
                 c.save()
                 return buf.getvalue()
