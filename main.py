@@ -12,7 +12,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
-from streamlit_qrcode_scanner import qrcode_scanner 
+from streamlit_qrcode_scanner import qrcode_scanner
 
 # --- 1. ตั้งค่าหน้าจอแอป ---
 st.set_page_config(page_title="ระบบจัดการทรัพย์สิน", layout="wide")
@@ -41,189 +41,458 @@ sheet_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 st.markdown(f"🔗 **ฐานข้อมูลหลัก:** [เปิด Google Sheets]({sheet_url})")
 
 FIELDS = [
-    "ID-Auto", "รูปภาพ", "QR-CODE", "บริษัท", "สถานะทรัพย์สิน", 
-    "กลุ่มทรัพย์สิน", "รหัสทรัพย์สิน", "ชื่อทรัพย์สิน1", "แผนก", 
-    "วันที่รับเข้าทะเบียน", "วันที่ตัดจากทะเบียน", "หน่วยนับ", 
+    "ID-Auto", "รูปภาพ", "QR-CODE", "บริษัท", "สถานะทรัพย์สิน",
+    "กลุ่มทรัพย์สิน", "รหัสทรัพย์สิน", "ชื่อทรัพย์สิน1", "แผนก",
+    "วันที่รับเข้าทะเบียน", "วันที่ตัดจากทะเบียน", "หน่วยนับ",
     "จำนวน", "มูลค่าทุน", "ค่าเสื่อมสะสม", "มูลค่าคงเหลือ", "ข้อมูล ณ วันที่"
 ]
 
 # --- 3. ฟังก์ชันเสริม ---
 def get_drive_direct_link(cell_value):
-    if not cell_value: return None
+    if not cell_value:
+        return None
+
     url_match = re.search(r'https?://[^\s"]+', str(cell_value))
-    if not url_match: return None
+
+    if not url_match:
+        return None
+
     url = url_match.group(0)
+
     if "drive.google.com" in url:
         file_id = ""
-        if "/d/" in url: file_id = url.split("/d/")[1].split("/")[0].split("?")[0]
-        elif "id=" in url: file_id = url.split("id=")[1].split("&")[0]
-        if file_id: return f"https://drive.google.com/thumbnail?sz=w1000&id={file_id}"
+
+        if "/d/" in url:
+            file_id = url.split("/d/")[1].split("/")[0].split("?")[0]
+        elif "id=" in url:
+            file_id = url.split("id=")[1].split("&")[0]
+
+        if file_id:
+            return f"https://drive.google.com/thumbnail?sz=w1000&id={file_id}"
+
     return url
 
+
 def get_qr_url(id_text):
-    if not id_text: return None
+    if not id_text:
+        return None
+
     return f"https://quickchart.io/qr?text={id_text}&size=150"
+
 
 def download_image(url):
     headers = {"User-Agent": "Mozilla/5.0"}
+
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
-        if resp.status_code == 200: return BytesIO(resp.content)
-    except: return None
+        resp = requests.get(
+            url,
+            headers=headers,
+            timeout=15
+        )
+
+        if resp.status_code == 200:
+            return BytesIO(resp.content)
+
+    except:
+        return None
+
     return None
 
+
 # --- 4. เชื่อมต่อ Google Sheets ---
-@st.cache_resource
+# แก้ไขจาก @st.cache_resource เป็น @st.cache_data(ttl=60)
+# เพื่อให้ข้อมูลจาก Google Sheets อัปเดตทุก 60 วินาที
+@st.cache_data(ttl=60)
 def get_data_from_sheets():
     try:
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive"
+        ]
+
         creds_info = st.secrets["gcp_service_account"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, scope)
+
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(
+            creds_info,
+            scope
+        )
+
         client = gspread.authorize(creds)
-        sh = client.open_by_key(SHEET_ID) 
+
+        sh = client.open_by_key(SHEET_ID)
+
         worksheet = sh.worksheet("online")
+
         data = worksheet.get_all_values()
-        if len(data) > 1: return pd.DataFrame(data[1:], columns=FIELDS)
+
+        if len(data) > 1:
+            return pd.DataFrame(
+                data[1:],
+                columns=FIELDS
+            )
+
         return pd.DataFrame(columns=FIELDS)
+
     except Exception as e:
-        st.error(f"❌ ไม่สามารถเชื่อมต่อ Google Sheets ได้: {e}")
+        st.error(
+            f"❌ ไม่สามารถเชื่อมต่อ Google Sheets ได้: {e}"
+        )
         return None
+
 
 df = get_data_from_sheets()
 
+
 if df is not None:
+
     # --- 5. Sidebar ---
     st.sidebar.header("🔍 ค้นหาและกรองข้อมูล")
-    
+
     st.sidebar.subheader("📷 สแกน QR Code")
+
     with st.sidebar.container():
-        scanned_value = qrcode_scanner(key='my_qr_scanner')
-    
-    if scanned_value and scanned_value != st.session_state['search_id_state']:
+        scanned_value = qrcode_scanner(
+            key='my_qr_scanner'
+        )
+
+    if (
+        scanned_value
+        and scanned_value != st.session_state['search_id_state']
+    ):
         st.session_state['search_id_state'] = scanned_value
         st.rerun()
 
     search_id = st.sidebar.text_input(
-        "ค้นหา ID-Auto", 
+        "ค้นหา ID-Auto",
         value=st.session_state['search_id_state'],
         key='search_input_field',
         placeholder="พิมพ์ ID หรือสแกน..."
     )
-    
+
     st.session_state['search_id_state'] = search_id
 
-    if st.sidebar.button("🔄 ล้างการค้นหาทั้งหมด", use_container_width=True):
+    if st.sidebar.button(
+        "🔄 ล้างการค้นหาทั้งหมด",
+        use_container_width=True
+    ):
         st.session_state['search_id_state'] = ""
         st.rerun()
 
     st.sidebar.divider()
-    search_comp = st.sidebar.text_input("ค้นหา บริษัท", placeholder="พิมพ์ชื่อบริษัท...")
-    search_group = st.sidebar.text_input("ค้นหา กลุ่มทรัพย์สิน", placeholder="พิมพ์กลุ่มทรัพย์สิน...")
-    search_name = st.sidebar.text_input("ค้นหา ชื่อทรัพย์สิน", placeholder="พิมพ์ชื่อทรัพย์สิน...")
-    
+
+    search_comp = st.sidebar.text_input(
+        "ค้นหา บริษัท",
+        placeholder="พิมพ์ชื่อบริษัท..."
+    )
+
+    search_group = st.sidebar.text_input(
+        "ค้นหา กลุ่มทรัพย์สิน",
+        placeholder="พิมพ์กลุ่มทรัพย์สิน..."
+    )
+
+    search_name = st.sidebar.text_input(
+        "ค้นหา ชื่อทรัพย์สิน",
+        placeholder="พิมพ์ชื่อทรัพย์สิน..."
+    )
+
     st.sidebar.subheader("📅 ช่วงวันที่รับเข้าทะเบียน")
+
     date_selection = st.sidebar.date_input(
         "เลือกช่วงวันที่",
-        value=(datetime(2020, 1, 1), datetime(datetime.now().year + 10, 12, 31)),
+        value=(
+            datetime(2020, 1, 1),
+            datetime(
+                datetime.now().year + 10,
+                12,
+                31
+            )
+        ),
         format="DD/MM/YYYY"
     )
 
     # --- กรองข้อมูล ---
     filtered_df = df.copy()
-    if search_id:
-        filtered_df = filtered_df[filtered_df['ID-Auto'].astype(str).str.contains(search_id, case=False, na=False)]
-    if search_comp:
-        filtered_df = filtered_df[filtered_df['บริษัท'].str.contains(search_comp, case=False, na=False)]
-    if search_group:
-        filtered_df = filtered_df[filtered_df['กลุ่มทรัพย์สิน'].str.contains(search_group, case=False, na=False)]
-    if search_name:
-        filtered_df = filtered_df[filtered_df['ชื่อทรัพย์สิน1'].str.contains(search_name, case=False, na=False)]
-    
-    if isinstance(date_selection, tuple) and len(date_selection) == 2:
-        start_d, end_d = date_selection
-        filtered_df['dt_temp'] = pd.to_datetime(filtered_df['วันที่รับเข้าทะเบียน'], dayfirst=True, errors='coerce')
-        filtered_df = filtered_df[(filtered_df['dt_temp'].dt.date >= start_d) & (filtered_df['dt_temp'].dt.date <= end_d)]
 
-    st.write(f"📊 พบข้อมูล **{len(filtered_df)}** รายการ (คลิกที่แถวเพื่อดูรายละเอียด)")
+    if search_id:
+        filtered_df = filtered_df[
+            filtered_df['ID-Auto']
+            .astype(str)
+            .str.contains(
+                search_id,
+                case=False,
+                na=False
+            )
+        ]
+
+    if search_comp:
+        filtered_df = filtered_df[
+            filtered_df['บริษัท']
+            .str.contains(
+                search_comp,
+                case=False,
+                na=False
+            )
+        ]
+
+    if search_group:
+        filtered_df = filtered_df[
+            filtered_df['กลุ่มทรัพย์สิน']
+            .str.contains(
+                search_group,
+                case=False,
+                na=False
+            )
+        ]
+
+    if search_name:
+        filtered_df = filtered_df[
+            filtered_df['ชื่อทรัพย์สิน1']
+            .str.contains(
+                search_name,
+                case=False,
+                na=False
+            )
+        ]
+
+    if (
+        isinstance(date_selection, tuple)
+        and len(date_selection) == 2
+    ):
+
+        start_d, end_d = date_selection
+
+        filtered_df['dt_temp'] = pd.to_datetime(
+            filtered_df['วันที่รับเข้าทะเบียน'],
+            dayfirst=True,
+            errors='coerce'
+        )
+
+        filtered_df = filtered_df[
+            (
+                filtered_df['dt_temp'].dt.date
+                >= start_d
+            )
+            &
+            (
+                filtered_df['dt_temp'].dt.date
+                <= end_d
+            )
+        ]
+
+    st.write(
+        f"📊 พบข้อมูล **{len(filtered_df)}** รายการ "
+        "(คลิกที่แถวเพื่อดูรายละเอียด)"
+    )
+
     selection = st.dataframe(
-        filtered_df.drop(columns=['dt_temp'], errors='ignore'), 
-        use_container_width=True, 
-        on_select="rerun", 
+        filtered_df.drop(
+            columns=['dt_temp'],
+            errors='ignore'
+        ),
+        use_container_width=True,
+        on_select="rerun",
         selection_mode="single-row",
         hide_index=True,
-        height=300 
+        height=300
     )
 
     if len(selection.selection.rows) > 0:
-        item = filtered_df.iloc[selection.selection.rows[0]]
-        st.divider() 
-        
-        col_img, col_detail = st.columns([1.5, 1.5]) 
-        
-        with col_img:
-            with st.container(border=True):
-                img_url = get_drive_direct_link(item['รูปภาพ'])
-                qr_url = get_qr_url(item['ID-Auto'])
-                if img_url: 
-                    st.image(img_url, caption="📸 รูปทรัพย์สิน", use_container_width=True)
-                
-                if qr_url: 
-                    st.image(qr_url, caption="🔗 QR-CODE", width=150)
-            
-        with col_detail:
-            with st.container(border=True):
-                st.subheader(f"📄 รายละเอียด: {item['ชื่อทรัพย์สิน1']}")
-                info_1, info_2 = st.columns(2)
-                for i, field in enumerate(FIELDS):
-                    if field not in ["รูปภาพ", "QR-CODE"]:
-                        target = info_1 if i % 2 == 0 else info_2
-                        target.write(f"**{field}:** {item[field]}")
 
-            # --- ฟังก์ชันสร้าง PDF (แก้ไข: เลื่อนรูปลงระดับเดียวกับ QR + เอา Footer ออก) ---
+        item = filtered_df.iloc[
+            selection.selection.rows[0]
+        ]
+
+        st.divider()
+
+        col_img, col_detail = st.columns(
+            [1.5, 1.5]
+        )
+
+        with col_img:
+
+            with st.container(border=True):
+
+                img_url = get_drive_direct_link(
+                    item['รูปภาพ']
+                )
+
+                qr_url = get_qr_url(
+                    item['ID-Auto']
+                )
+
+                if img_url:
+                    st.image(
+                        img_url,
+                        caption="📸 รูปทรัพย์สิน",
+                        use_container_width=True
+                    )
+
+                if qr_url:
+                    st.image(
+                        qr_url,
+                        caption="🔗 QR-CODE",
+                        width=150
+                    )
+
+        with col_detail:
+
+            with st.container(border=True):
+
+                st.subheader(
+                    f"📄 รายละเอียด: "
+                    f"{item['ชื่อทรัพย์สิน1']}"
+                )
+
+                info_1, info_2 = st.columns(2)
+
+                for i, field in enumerate(FIELDS):
+
+                    if field not in [
+                        "รูปภาพ",
+                        "QR-CODE"
+                    ]:
+
+                        target = (
+                            info_1
+                            if i % 2 == 0
+                            else info_2
+                        )
+
+                        target.write(
+                            f"**{field}:** "
+                            f"{item[field]}"
+                        )
+
+            # --- ฟังก์ชันสร้าง PDF ---
+            # เลื่อนรูปลงระดับเดียวกับ QR
+            # และเอา Footer ออก
             def generate_pdf(data):
+
                 buf = BytesIO()
-                c = canvas.Canvas(buf, pagesize=A4)
+
+                c = canvas.Canvas(
+                    buf,
+                    pagesize=A4
+                )
+
                 w, h = A4
-                
+
                 # วาดกรอบรอบหน้ากระดาษ
                 c.setLineWidth(1)
-                c.rect(40, 40, w-80, h-80)
+
+                c.rect(
+                    40,
+                    40,
+                    w - 80,
+                    h - 80
+                )
 
                 try:
-                    pdfmetrics.registerFont(TTFont('ThaiBold', 'THSARABUN BOLD.ttf'))
-                    c.setFont('ThaiBold', 22)
-                except: 
-                    c.setFont('Helvetica-Bold', 18)
-                
-                c.drawString(60, h-80, "รายละเอียดทรัพย์สิน")
-                c.line(60, h-90, w-60, h-90)
-                
+
+                    pdfmetrics.registerFont(
+                        TTFont(
+                            'ThaiBold',
+                            'THSARABUN BOLD.ttf'
+                        )
+                    )
+
+                    c.setFont(
+                        'ThaiBold',
+                        22
+                    )
+
+                except:
+
+                    c.setFont(
+                        'Helvetica-Bold',
+                        18
+                    )
+
+                c.drawString(
+                    60,
+                    h - 80,
+                    "รายละเอียดทรัพย์สิน"
+                )
+
+                c.line(
+                    60,
+                    h - 90,
+                    w - 60,
+                    h - 90
+                )
+
                 # รายละเอียดข้อมูล
-                c.setFont('ThaiBold', 14)
-                curr_y = h - 105 
+                c.setFont(
+                    'ThaiBold',
+                    14
+                )
+
+                curr_y = h - 105
+
                 for f in FIELDS:
-                    if f not in ["รูปภาพ", "QR-CODE"]:
-                        c.drawString(80, curr_y, f"• {f}: {data[f]}")
+
+                    if f not in [
+                        "รูปภาพ",
+                        "QR-CODE"
+                    ]:
+
+                        c.drawString(
+                            80,
+                            curr_y,
+                            f"• {f}: {data[f]}"
+                        )
+
                         curr_y -= 22
-                
-                # รูปทรัพย์สิน (เลื่อนลงมาที่ y=50 เพื่อให้ท้ายเท่ากับ QR-CODE)
-                i_url = get_drive_direct_link(data['รูปภาพ'])
+
+                # รูปทรัพย์สิน
+                # เลื่อนลงมาที่ y=50
+                # เพื่อให้ท้ายเท่ากับ QR-CODE
+                i_url = get_drive_direct_link(
+                    data['รูปภาพ']
+                )
+
                 if i_url:
-                    i_data = download_image(i_url)
-                    if i_data: 
-                        # ปรับตำแหน่ง y=50 เพื่อให้ฐานรูปภาพขนานกับ QR Code
-                        c.drawImage(ImageReader(i_data), 140, 50, width=w-200, height=350, preserveAspectRatio=True)
-                
-                # QR Code (มุมล่างซ้าย)
-                q_url = get_qr_url(data['ID-Auto'])
+
+                    i_data = download_image(
+                        i_url
+                    )
+
+                    if i_data:
+
+                        c.drawImage(
+                            ImageReader(i_data),
+                            140,
+                            50,
+                            width=w - 200,
+                            height=350,
+                            preserveAspectRatio=True
+                        )
+
+                # QR Code มุมล่างซ้าย
+                q_url = get_qr_url(
+                    data['ID-Auto']
+                )
+
                 if q_url:
-                    q_data = download_image(q_url)
-                    if q_data: 
-                        c.drawImage(ImageReader(q_data), 60, 50, 60, 60)
-                
-                # (Footer เอาชื่อระบบออกแล้ว)
+
+                    q_data = download_image(
+                        q_url
+                    )
+
+                    if q_data:
+
+                        c.drawImage(
+                            ImageReader(q_data),
+                            60,
+                            50,
+                            60,
+                            60
+                        )
+
+                # Footer เอาชื่อระบบออกแล้ว
 
                 c.save()
+
                 return buf.getvalue()
 
             st.download_button(
@@ -233,7 +502,15 @@ if df is not None:
                 mime="application/pdf",
                 use_container_width=True
             )
+
     else:
-        st.info("👈 กรุณาคลิกเลือกรายการในตารางด้านบน")
+
+        st.info(
+            "👈 กรุณาคลิกเลือกรายการในตารางด้านบน"
+        )
+
 else:
-    st.info("💡 กรุณาตรวจสอบการเชื่อมต่อ Google Sheets")
+
+    st.info(
+        "💡 กรุณาตรวจสอบการเชื่อมต่อ Google Sheets"
+    )
